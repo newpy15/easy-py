@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Python Typing Game</title>
+<style>
+/* ── 전체 레이아웃: 게임(좌) + 설정패널(우) ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0a0a14;
+  color: #e0e0e0;
+  font-family: 'Consolas', 'Courier New', monospace;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  gap: 20px;
+  padding: 20px;
+}
+
+/* ════════════════════════════════
+   게임 영역
+════════════════════════════════ */
+#game {
+  position: relative;
+  width: 800px;
+  height: 620px;
+  background: #0f0f19;
+  border: 2px solid #2a2a3a;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* HUD */
+#hud {
+  position: absolute;
+  top: 10px; left: 16px; right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 18px;
+  z-index: 10;
+}
+#hud .time  { color: #7fd6ff; }
+#hud .score { color: #ffd76e; }
+#hud .diff  { color: #b48bff; }
+#livesDisplay { font-size: 18px; }
+
+/* 낙하 영역 */
+#playArea {
+  position: absolute;
+  top: 46px; left: 0; right: 0; bottom: 80px;
+}
+
+/* 블록 */
+.block {
+  position: absolute;
+  padding: 6px 12px;
+  background: #1e2a1e;
+  border: 1px solid #3a5a3a;
+  border-radius: 8px;
+  color: #b8ffb8;
+  font-size: 20px;
+  white-space: nowrap;
+  cursor: help;
+  user-select: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+.block:hover       { background: #2a3d2a; border-color: #6aff6a; }
+.block.hit         { animation: pop 0.22s forwards; }
+.block.hard        { background: #2a1e3a; border-color: #6a3a8a; color: #e0b8ff; }
+.block.hard:hover  { background: #3d2a5a; border-color: #b46aff; }
+@keyframes pop { to { transform: scale(1.4); opacity: 0; } }
+
+/* 툴팁 */
+#tooltip {
+  position: absolute;
+  max-width: 280px;
+  padding: 10px 14px;
+  background: #1a1a2e;
+  border: 1px solid #4a6aff;
+  border-radius: 8px;
+  color: #d0e0ff;
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 30;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+}
+#tooltip.show { opacity: 1; }
+#tooltip .code { display: block; color: #7fd6ff; font-weight: bold; margin-bottom: 4px; font-size: 14px; }
+
+/* 입력창 */
+#inputBar {
+  position: absolute;
+  bottom: 16px; left: 16px; right: 16px;
+  background: #1a1a2a;
+  border: 2px solid #3a3a5a;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 22px;
+  color: #ffd76e;
+  font-family: inherit;
+  z-index: 10;
+  min-height: 50px;
+}
+#inputBar::before { content: "> "; color: #7fd6ff; }
+
+/* 오버레이 */
+#overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10,10,20,0.96);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  z-index: 20;
+  text-align: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+#overlay h1 { font-size: 40px; color: #7fd6ff; }
+#overlay p  { font-size: 14px; color: #aaa; line-height: 1.7; }
+#overlay button {
+  padding: 12px 36px; font-size: 20px; font-family: inherit;
+  background: #7fd6ff; color: #0f0f19;
+  border: none; border-radius: 8px; cursor: pointer; font-weight: bold;
+  transition: background 0.15s;
+}
+#overlay button:hover { background: #a3e2ff; }
+
+/* ── 결과 화면 스타일 ── */
+.result-stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin: 4px 0;
+}
+.stat-box {
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
+  padding: 10px 20px;
+  min-width: 110px;
+}
+.stat-box .s-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+.stat-box .s-num   { font-size: 26px; font-weight: bold; }
+.stat-box .s-num.score-color  { color: #ffd76e; }
+.stat-box .s-num.hit-color    { color: #7fffb8; }
+.stat-box .s-num.miss-color   { color: #ff8a8a; }
+
+/* 놓친 블록 목록 */
+.missed-section {
+  width: 100%;
+  max-width: 680px;
+  text-align: left;
+}
+.missed-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #ff8a8a;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 2px;
+}
+.missed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.missed-list::-webkit-scrollbar        { width: 5px; }
+.missed-list::-webkit-scrollbar-track  { background: #1a1a2e; border-radius: 4px; }
+.missed-list::-webkit-scrollbar-thumb  { background: #3a3a6a; border-radius: 4px; }
+
+.missed-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #15152a;
+  border: 1px solid #2a2a3e;
+  border-left: 3px solid #ff6a6a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  animation: slideIn 0.25s ease both;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.missed-item .m-code {
+  color: #ffb8b8;
+  font-weight: bold;
+  font-size: 14px;
+  white-space: nowrap;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+.missed-item .m-desc { color: #999; line-height: 1.5; }
+.missed-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ff4a4a22;
+  border: 1px solid #ff4a4a55;
+  color: #ff8a8a;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 8px;
+}
+.no-missed {
+  text-align: center;
+  color: #7fffb8;
+  font-size: 14px;
+  padding: 16px;
+  background: #0e2a1a;
+  border: 1px solid #2a5a3a;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+/* 난이도 카드 */
+.diff-grid { display: flex; gap: 14px; }
+.diff-card {
+  width: 170px; padding: 16px 14px;
+  background: #1a1a2e; border: 2px solid #3a3a5a;
+  border-radius: 12px; cursor: pointer; transition: all 0.15s; text-align: left;
+}
+.diff-card:hover           { transform: translateY(-4px); border-color: #4a6aff; }
+.diff-card .lvl            { font-size: 19px; font-weight: bold; color: #7fd6ff; margin-bottom: 6px; }
+.diff-card .desc           { font-size: 12px; color: #aaa; line-height: 1.4; }
+.diff-card.hard:hover      { border-color: #b46aff; }
+.diff-card.hard .lvl       { color: #b48bff; }
+
+.hidden { display: none !important; }
+
+/* ════════════════════════════════
+   외부 설정 패널 (게임 화면 우측)
+════════════════════════════════ */
+#settings-panel {
+  width: 230px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel-box {
+  background: #12121e;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel-box h3 {
+  font-size: 13px;
+  font-weight: bold;
+  color: #7fd6ff;
+  letter-spacing: 1px;
+  border-bottom: 1px solid #2a2a4a;
+  padding-bottom: 8px;
+}
+
+/* 키 힌트 */
+.key-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  background: #1e1e30;
+  border: 1px solid #4a4a6a;
+  border-bottom: 3px solid #4a4a6a;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #ccc;
+  font-weight: bold;
+  line-height: 1;
+}
+.key-action { color: #aaa; font-size: 11px; }
+
+/* 레벨 표시기 (1~5 박스) */
+.level-indicator {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+.lv-box {
+  width: 36px; height: 36px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #555;
+  cursor: default;
+  transition: all 0.15s;
+  gap: 1px;
+}
+.lv-box .lv-num { font-size: 14px; }
+.lv-box .lv-dot { width: 5px; height: 5px; border-radius: 50%; background: #555; transition: background 0.15s; }
+
+.lv-box.active {
+  background: #1e3a1e;
+  border-color: #4aff6a;
+  color: #7fffb8;
+}
+.lv-box.active .lv-dot { background: #4aff6a; }
+
+/* 속도용 활성 색상 */
+#speed-indicator .lv-box.active {
+  background: #1e1e3a;
+  border-color: #7fd6ff;
+  color: #7fd6ff;
+}
+#speed-indicator .lv-box.active .lv-dot { background: #7fd6ff; }
+
+/* 레벨 설명 테이블 */
+.lv-desc-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.lv-desc-row {
+  display: flex;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  align-items: flex-start;
+  transition: background 0.12s;
+}
+.lv-desc-row.active-desc {
+  background: #1a2a2a;
+}
+.lv-desc-row .lv-tag {
+  font-weight: bold;
+  color: #7fd6ff;
+  flex-shrink: 0;
+  width: 18px;
+}
+.lv-desc-row .lv-text { color: #999; line-height: 1.4; }
+
+/* spawn용 색상 */
+#spawn-box .lv-box.active {
+  background: #2a1e1e;
+  border-color: #ffb46a;
+  color: #ffb46a;
+}
+#spawn-box .lv-box.active .lv-dot { background: #ffb46a; }
+#spawn-box .lv-desc-row.active-desc { background: #2a1e14; }
+#spawn-box .lv-desc-row .lv-tag   { color: #ffb46a; }
+
+/* 현재 상태 요약 */
+.status-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  background: #1a1a2e;
+  border-radius: 6px;
+}
+.status-label { color: #888; }
+.status-val   { font-weight: bold; font-size: 14px; }
+.status-val.speed { color: #7fd6ff; }
+.status-val.spawn { color: #ffb46a; }
+
+/* 조작법 안내 */
+.control-guide {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  line-height: 1.6;
+}
+.control-guide span { color: #888; }
+</style>
+</head>
+<body>
+
+<!-- ════ 게임 영역 ════ -->
+<div id="game">
+  <div id="hud">
+    <span class="time">⏱ <span id="timeVal">60</span>s</span>
+    <span id="livesDisplay">❤️❤️❤️</span>
+    <span class="diff">Lv.<span id="diffVal">—</span></span>
+    <span class="score">Score: <span id="scoreVal">0</span></span>
+  </div>
+
+  <div id="playArea"></div>
+  <div id="inputBar"><span id="typedText"></span><span id="caret">|</span></div>
+  <div id="tooltip"></div>
+
+  <!-- 시작/결과 오버레이 -->
+  <div id="overlay">
+    <h1>🐍 Python Typing</h1>
+    <p>
+      떨어지는 파이썬 코드를 정확히 타이핑하고 <b>Enter</b>!<br>
+      60초 동안 최대한 많이 받아치세요.<br>
+      <span style="color:#ff8a8a;">블록을 놓치면 목숨 감소 (❤️×3)</span> · 
+      <span style="color:#7fd6ff;">블록에 마우스 = 설명 툴팁</span>
+    </p>
+    <p style="color:#b48bff; font-size:13px;">
+      ↑ / ↓  낙하 속도 조절 &nbsp;·&nbsp; ← / →  단어 빈도 조절<br>
+      <span style="color:#666;">(게임 중 언제든지 우측 패널에서 확인 가능)</span>
+    </p>
+    <h2 style="color:#fff; font-size:19px; margin-top:4px;">단어 종류 선택</h2>
+    <div class="diff-grid">
+      <div class="diff-card" data-lvl="1">
+        <div class="lvl">Lv.1 쉬움</div>
+        <div class="desc">짧은 기본 함수·연산<br>점수 ×1</div>
+      </div>
+      <div class="diff-card" data-lvl="2">
+        <div class="lvl">Lv.2 보통</div>
+        <div class="desc">긴 문법·함수 조합<br>점수 ×1.5</div>
+      </div>
+      <div class="diff-card hard" data-lvl="3">
+        <div class="lvl">Lv.3 어려움</div>
+        <div class="desc">문자열 리터럴 포함<br><b>따옴표 안 영어까지!</b><br>점수 ×2</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ 외부 설정 패널 ════ -->
+<div id="settings-panel">
+
+  <!-- ① 낙하 속도 -->
+  <div class="panel-box">
+    <h3>⚡ 낙하 속도</h3>
+
+    <!-- 키 힌트 -->
+    <div class="key-hint">
+      <span class="key">↑</span>
+      <span class="key-action">빠르게</span>
+      <span style="color:#444; font-size:18px;">|</span>
+      <span class="key-action">느리게</span>
+      <span class="key">↓</span>
+    </div>
+
+    <!-- 레벨 표시기 -->
+    <div class="level-indicator" id="speed-indicator">
+      <div class="lv-box" data-lv="1"><span class="lv-num">1</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="2"><span class="lv-num">2</span><span class="lv-dot"></span></div>
+      <div class="lv-box active" data-lv="3"><span class="lv-num">3</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="4"><span class="lv-num">4</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="5"><span class="lv-num">5</span><span class="lv-dot"></span></div>
+    </div>
+
+    <!-- 레벨별 설명 -->
+    <div class="lv-desc-table" id="speed-desc">
+      <div class="lv-desc-row" data-lv="1"><span class="lv-tag">1</span><span class="lv-text">매우 느림 — 처음 연습할 때</span></div>
+      <div class="lv-desc-row" data-lv="2"><span class="lv-tag">2</span><span class="lv-text">느림 — 초보자 추천</span></div>
+      <div class="lv-desc-row active-desc" data-lv="3"><span class="lv-tag">3</span><span class="lv-text">보통 — 기본값</span></div>
+      <div class="lv-desc-row" data-lv="4"><span class="lv-tag">4</span><span class="lv-text">빠름 — 숙련자용</span></div>
+      <div class="lv-desc-row" data-lv="5"><span class="lv-tag">5</span><span class="lv-text">매우 빠름 — 도전!</span></div>
+    </div>
+  </div>
+
+  <!-- ② 단어 빈도 -->
+  <div class="panel-box" id="spawn-box">
+    <h3>🔢 단어 빈도</h3>
+
+    <div class="key-hint">
+      <span class="key">←</span>
+      <span class="key-action">적게</span>
+      <span style="color:#444; font-size:18px;">|</span>
+      <span class="key-action">많이</span>
+      <span class="key">→</span>
+    </div>
+
+    <div class="level-indicator" id="spawn-indicator">
+      <div class="lv-box" data-lv="1"><span class="lv-num">1</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="2"><span class="lv-num">2</span><span class="lv-dot"></span></div>
+      <div class="lv-box active" data-lv="3"><span class="lv-num">3</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="4"><span class="lv-num">4</span><span class="lv-dot"></span></div>
+      <div class="lv-box" data-lv="5"><span class="lv-num">5</span><span class="lv-dot"></span></div>
+    </div>
+
+    <div class="lv-desc-table" id="spawn-desc">
+      <div class="lv-desc-row" data-lv="1"><span class="lv-tag">1</span><span class="lv-text">매우 드물게 — 약 3초마다 1개</span></div>
+      <div class="lv-desc-row" data-lv="2"><span class="lv-tag">2</span><span class="lv-text">드물게 — 약 2초마다 1개</span></div>
+      <div class="lv-desc-row active-desc" data-lv="3"><span class="lv-tag">3</span><span class="lv-text">보통 — 약 1.4초마다 1개</span></div>
+      <div class="lv-desc-row" data-lv="4"><span class="lv-tag">4</span><span class="lv-text">자주 — 약 1초마다 1개</span></div>
+      <div class="lv-desc-row" data-lv="5"><span class="lv-tag">5</span><span class="lv-text">매우 자주 — 약 0.7초마다 1개</span></div>
+    </div>
+  </div>
+
+  <!-- ③ 현재 상태 요약 -->
+  <div class="panel-box">
+    <h3>📊 현재 설정</h3>
+    <div class="status-summary">
+      <div class="status-row">
+        <span class="status-label">⚡ 낙하 속도</span>
+        <span class="status-val speed" id="curSpeedDisplay">3 / 5</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">🔢 단어 빈도</span>
+        <span class="status-val spawn" id="curSpawnDisplay">3 / 5</span>
+      </div>
+    </div>
+    <div class="control-guide">
+      게임 시작 전·중 <span>언제든지</span><br>
+      방향키로 실시간 조절 가능
+    </div>
+  </div>
+
+</div><!-- /settings-panel -->
+
+<script>
+// ════════════════════════════════════════
+//  설정값 테이블
+// ════════════════════════════════════════
+// 낙하 속도: px/frame 기준값 (rng 로 ±30% 변동)
+const SPEED_BASE = { 1: 0.55, 2: 1.0, 3: 1.6, 4: 2.3, 5: 3.2 };
+// 단어 빈도: 스폰 인터벌(ms)
+const SPAWN_MS   = { 1: 3000, 2: 2000, 3: 1400, 4: 1000, 5: 700 };
+
+// 단어 데이터
+const WORD_POOLS = {
+  1: [
+    { code: "len(x)",    desc: "len(x)는 객체 x의 길이(요소 개수)를 반환합니다." },
+    { code: "abs(-3)",   desc: "abs()는 절댓값을 반환합니다. abs(-3) → 3." },
+    { code: "x ** 2",    desc: "** 연산자는 거듭제곱입니다." },
+    { code: "a + b",     desc: "덧셈 연산자. 숫자 합, 문자열/리스트 연결에도 사용." },
+    { code: "x % 2",     desc: "% 연산자는 나머지를 구합니다." },
+    { code: "max(a, b)", desc: "max()는 인자 중 가장 큰 값을 반환합니다." },
+    { code: "x += 1",    desc: "x = x + 1의 축약형. 증가 연산." },
+    { code: "print(x)",  desc: "print()는 값을 화면에 출력합니다." },
+    { code: "int(42)",   desc: "int()는 값을 정수로 변환합니다." },
+    { code: "str(42)",   desc: "str()는 값을 문자열로 변환합니다." }
+  ],
+  2: [
+    { code: "range(10)",      desc: "range(n)은 0부터 n-1까지의 정수 시퀀스를 만듭니다." },
+    { code: "def f():",       desc: "def는 함수 정의 키워드. def 함수명(매개변수): 형태." },
+    { code: "[i for i in y]", desc: "리스트 컴프리헨션. 각 요소 i를 모아 리스트를 만듭니다." },
+    { code: "sum(lst)",       desc: "sum()은 이터러블의 모든 요소 합을 반환합니다." },
+    { code: "return x",       desc: "return은 함수의 결과값을 반환하고 함수를 종료합니다." },
+    { code: "if x > 0:",      desc: "if는 조건문. 콜론(:) 뒤 들여쓴 블록 실행." },
+    { code: "while True:",    desc: "while은 조건이 참인 동안 반복. while True:는 무한 루프." },
+    { code: "import os",      desc: "import는 모듈을 불러옵니다. os는 OS 기능 모듈." },
+    { code: "lambda x: x*2",  desc: "lambda는 익명 함수. lambda 인자: 반환식." },
+    { code: "sorted(lst)",    desc: "sorted()는 정렬된 새 리스트를 반환합니다." }
+  ],
+  3: [
+    { code: "print('train')",  desc: "문자열 'train'을 출력합니다. 따옴표 안 영어까지 정확히!" },
+    { code: "print('hello')",  desc: "문자열 'hello'를 출력합니다." },
+    { code: "int('42')",       desc: "문자열 '42'를 정수로 변환합니다." },
+    { code: "x = 'python'",    desc: "변수 x에 문자열 'python'을 할당합니다." },
+    { code: "len('apple')",    desc: "문자열 'apple'의 길이를 반환합니다." },
+    { code: "name = 'kim'",    desc: "변수 name에 문자열 'kim'을 할당합니다." },
+    { code: "print('score')",  desc: "문자열 'score'를 출력합니다." },
+    { code: "'data' in s",     desc: "'data'가 문자열 s에 포함되어 있는지 확인합니다." },
+    { code: "print('Hello')",  desc: "대문자 포함 문자열 'Hello' 출력. 대소문자 구분!" },
+    { code: "input('name: ')", desc: "input()은 사용자 입력을 받습니다. 프롬프트 문자열 포함." },
+    { code: "print('world')",  desc: "문자열 'world'를 출력합니다." },
+    { code: "s = 'game'",      desc: "변수 s에 문자열 'game'을 할당합니다." }
+  ]
+};
+const DIFF_MULTIPLIER = { 1: 1.0, 2: 1.5, 3: 2.0 };
+const GAME_DURATION = 60;
+const MAX_LIVES = 3;
+
+// DOM
+const playArea    = document.getElementById('playArea');
+const typedText   = document.getElementById('typedText');
+const timeValEl   = document.getElementById('timeVal');
+const scoreValEl  = document.getElementById('scoreVal');
+const diffValEl   = document.getElementById('diffVal');
+const livesDisp   = document.getElementById('livesDisplay');
+const overlay     = document.getElementById('overlay');
+const tooltipEl   = document.getElementById('tooltip');
+const inputBarEl  = document.getElementById('inputBar');
+
+// 게임 상태
+let blocks = [], typed = "", score = 0, lives = MAX_LIVES;
+let timeLeft = GAME_DURATION, running = false;
+let currentLvl = 1, pool = WORD_POOLS[1], multiplier = 1.0;
+let lastSpawn = 0, lastFrame = 0;
+let rafId = null, tickId = null;
+
+// 놓친 블록 기록 { code, desc, count }
+let missedMap = {};  // code → { desc, count }
+let hitCount  = 0;
+
+// 현재 설정 (기본값 3)
+let curSpeedLv = 3;
+let curSpawnLv = 3;
+
+// ════════════════════════════════════════
+//  설정 패널 UI 업데이트
+// ════════════════════════════════════════
+function updatePanelUI() {
+  // 속도 인디케이터
+  document.querySelectorAll('#speed-indicator .lv-box').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.lv) === curSpeedLv);
+  });
+  document.querySelectorAll('#speed-desc .lv-desc-row').forEach(el => {
+    el.classList.toggle('active-desc', parseInt(el.dataset.lv) === curSpeedLv);
+  });
+
+  // 빈도 인디케이터
+  document.querySelectorAll('#spawn-indicator .lv-box').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.lv) === curSpawnLv);
+  });
+  document.querySelectorAll('#spawn-desc .lv-desc-row').forEach(el => {
+    el.classList.toggle('active-desc', parseInt(el.dataset.lv) === curSpawnLv);
+  });
+
+  // 요약 표시
+  document.getElementById('curSpeedDisplay').textContent = curSpeedLv + ' / 5';
+  document.getElementById('curSpawnDisplay').textContent = curSpawnLv + ' / 5';
+}
+
+// 초기 UI 반영
+updatePanelUI();
+
+// ════════════════════════════════════════
+//  커서 깜빡임
+// ════════════════════════════════════════
+setInterval(() => {
+  const c = document.getElementById('caret');
+  if (c) c.style.opacity = c.style.opacity === '0' ? '1' : '0';
+}, 530);
+
+// ════════════════════════════════════════
+//  난이도 카드 클릭 → 게임 시작
+// ════════════════════════════════════════
+document.querySelectorAll('.diff-card').forEach(card => {
+  card.addEventListener('click', () => startGame(parseInt(card.dataset.lvl)));
+});
+
+// ════════════════════════════════════════
+//  게임 시작
+// ════════════════════════════════════════
+function startGame(lvl) {
+  currentLvl = lvl;
+  pool       = WORD_POOLS[lvl];
+  multiplier = DIFF_MULTIPLIER[lvl];
+
+  blocks.forEach(b => { if (b.el.parentNode) b.el.remove(); });
+  blocks = []; typed = ""; score = 0; lives = MAX_LIVES; timeLeft = GAME_DURATION;
+  missedMap = {}; hitCount = 0;
+
+  diffValEl.textContent = lvl;
+  updateHUD();
+  overlay.classList.add('hidden');
+  hideTooltip();
+
+  running   = true;
+  lastSpawn = performance.now();
+  lastFrame = performance.now();
+
+  clearInterval(tickId);
+  cancelAnimationFrame(rafId);
+
+  tickId = setInterval(() => {
+    timeLeft--;
+    updateHUD();
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+
+  rafId = requestAnimationFrame(loop);
+}
+
+// ════════════════════════════════════════
+//  게임 루프
+// ════════════════════════════════════════
+function loop(now) {
+  if (!running) return;
+  const dt = now - lastFrame;
+  lastFrame = now;
+
+  if (now - lastSpawn > SPAWN_MS[curSpawnLv]) {
+    spawnBlock();
+    lastSpawn = now;
+  }
+
+  const areaH = playArea.clientHeight;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (!b.alive) continue;
+
+    // 속도: 현재 speedLv 에서 실시간으로 계산
+    const spd = SPEED_BASE[curSpeedLv] * (0.75 + b.rng * 0.5);
+    b.y += spd * (dt / 16.67);
+    b.el.style.top = b.y + 'px';
+
+    if (b.y > areaH) {
+      b.alive = false;
+      if (b.el.parentNode) b.el.remove();
+      blocks.splice(i, 1);
+      // 놓친 블록 기록
+      if (missedMap[b.text]) {
+        missedMap[b.text].count++;
+      } else {
+        missedMap[b.text] = { desc: b.desc, count: 1 };
+      }
+      lives--;
+      flashLives();
+      updateHUD();
+      if (lives <= 0) { endGame(); return; }
+    }
+  }
+
+  rafId = requestAnimationFrame(loop);
+}
+
+// ════════════════════════════════════════
+//  블록 생성
+// ════════════════════════════════════════
+function spawnBlock() {
+  const item = pool[Math.floor(Math.random() * pool.length)];
+  const el = document.createElement('div');
+  el.className = 'block' + (currentLvl === 3 ? ' hard' : '');
+  el.textContent = item.code;
+  playArea.appendChild(el);
+
+  const areaW  = playArea.clientWidth;
+  const blockW = el.offsetWidth;
+  el.style.left = (Math.random() * Math.max(0, areaW - blockW - 10)) + 'px';
+  el.style.top  = '-50px';
+
+  el.addEventListener('mouseenter', () => showTooltip(el, item.code, item.desc));
+  el.addEventListener('mouseleave',  hideTooltip);
+
+  blocks.push({ el, text: item.code, desc: item.desc, y: -50, rng: Math.random(), alive: true });
+}
+
+// ════════════════════════════════════════
+//  툴팁
+// ════════════════════════════════════════
+function showTooltip(el, code, desc) {
+  tooltipEl.innerHTML = `<span class="code">${escapeHtml(code)}</span>${escapeHtml(desc)}`;
+  tooltipEl.classList.add('show');
+
+  const gameRect = document.getElementById('game').getBoundingClientRect();
+  const elRect   = el.getBoundingClientRect();
+  const ttW = tooltipEl.offsetWidth, ttH = tooltipEl.offsetHeight;
+  const pad = 8;
+
+  let left = elRect.left - gameRect.left + el.offsetWidth / 2 - ttW / 2;
+  let top  = elRect.top  - gameRect.top  - ttH - 10;
+  if (left < pad) left = pad;
+  if (left + ttW > gameRect.width - pad) left = gameRect.width - ttW - pad;
+  if (top  < pad) top  = elRect.bottom - gameRect.top + 10;
+
+  tooltipEl.style.left = left + 'px';
+  tooltipEl.style.top  = top  + 'px';
+}
+function hideTooltip() { tooltipEl.classList.remove('show'); }
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ════════════════════════════════════════
+//  키 입력
+// ════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  // 방향키 → 설정 조절 (게임 중·전 모두)
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    curSpeedLv = Math.min(5, curSpeedLv + 1);
+    updatePanelUI();
+    flashPanel('speed');
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    curSpeedLv = Math.max(1, curSpeedLv - 1);
+    updatePanelUI();
+    flashPanel('speed');
+    return;
+  }
+  if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    curSpawnLv = Math.min(5, curSpawnLv + 1);
+    lastSpawn = performance.now(); // 즉시 타이밍 리셋
+    updatePanelUI();
+    flashPanel('spawn');
+    return;
+  }
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    curSpawnLv = Math.max(1, curSpawnLv - 1);
+    lastSpawn = performance.now();
+    updatePanelUI();
+    flashPanel('spawn');
+    return;
+  }
+
+  // 타이핑
+  if (!running) return;
+  if (e.key === 'Enter') {
+    e.preventDefault(); tryMatch();
+  } else if (e.key === 'Backspace') {
+    e.preventDefault(); typed = typed.slice(0, -1); renderTyped();
+  } else if (e.key.length === 1) {
+    typed += e.key; renderTyped();
+  }
+});
+
+// 패널 플래시 효과
+function flashPanel(type) {
+  const el = type === 'speed'
+    ? document.getElementById('speed-indicator')
+    : document.getElementById('spawn-indicator');
+  el.style.transition = 'opacity 0.05s';
+  el.style.opacity = '0.4';
+  setTimeout(() => { el.style.opacity = '1'; }, 100);
+}
+
+function renderTyped() { typedText.textContent = typed; }
+
+// ════════════════════════════════════════
+//  매칭
+// ════════════════════════════════════════
+function tryMatch() {
+  if (!typed.trim()) return;
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].alive && blocks[i].text === typed) {
+      const b = blocks[i];
+      b.alive = false;
+      b.el.classList.add('hit');
+      setTimeout(() => { if (b.el.parentNode) b.el.remove(); }, 250);
+      blocks.splice(i, 1);
+      score += Math.round((10 + b.text.length) * multiplier);
+      hitCount++;
+      updateHUD();
+      break;
+    }
+  }
+  typed = ""; renderTyped();
+}
+
+// ════════════════════════════════════════
+//  HUD / 효과
+// ════════════════════════════════════════
+function updateHUD() {
+  timeValEl.textContent  = Math.max(0, timeLeft);
+  scoreValEl.textContent = score;
+  livesDisp.textContent  = '❤️'.repeat(lives) + '🖤'.repeat(Math.max(0, MAX_LIVES - lives));
+}
+function flashLives() {
+  inputBarEl.style.borderColor = '#ff5a5a';
+  setTimeout(() => { inputBarEl.style.borderColor = '#3a3a5a'; }, 300);
+}
+
+// ════════════════════════════════════════
+//  게임 종료
+// ════════════════════════════════════════
+function endGame() {
+  running = false;
+  clearInterval(tickId);
+  cancelAnimationFrame(rafId);
+  hideTooltip();
+
+  // 화면에 남아 있는 블록도 놓친 것으로 기록
+  blocks.forEach(b => {
+    if (!b.alive) return;
+    if (missedMap[b.text]) {
+      missedMap[b.text].count++;
+    } else {
+      missedMap[b.text] = { desc: b.desc, count: 1 };
+    }
+    if (b.el.parentNode) b.el.remove();
+  });
+  blocks = [];
+
+  const reason     = lives <= 0 ? '목숨을 모두 잃었어요 💀' : '⏱ 시간 종료!';
+  const missedList = Object.entries(missedMap); // [[code, {desc,count}], ...]
+  const missedTotal = missedList.reduce((s, [, v]) => s + v.count, 0);
+
+  // 놓친 블록 HTML
+  let missedHTML = '';
+  if (missedList.length === 0) {
+    missedHTML = `<div class="no-missed">🎉 한 개도 놓치지 않았어요! 완벽해요!</div>`;
+  } else {
+    // 많이 놓친 순으로 정렬
+    missedList.sort((a, b) => b[1].count - a[1].count);
+    const items = missedList.map(([code, { desc, count }], i) => `
+      <div class="missed-item" style="animation-delay:${i * 0.05}s">
+        <span class="m-code">${escapeHtml(code)}${count > 1 ? ` <span style="font-size:11px;color:#ff6a6a;">×${count}</span>` : ''}</span>
+        <span class="m-desc">${escapeHtml(desc)}</span>
+      </div>
+    `).join('');
+    missedHTML = `<div class="missed-list">${items}</div>`;
+  }
+
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1 style="color:#ffd76e; font-size:36px;">GAME OVER</h1>
+    <p style="font-size:14px; color:#888;">${reason} &nbsp;·&nbsp; 난이도 Lv.${currentLvl} &nbsp;·&nbsp; 속도 ${curSpeedLv}/5 &nbsp;·&nbsp; 빈도 ${curSpawnLv}/5</p>
+
+    <div class="result-stats">
+      <div class="stat-box">
+        <div class="s-label">🏆 최종 점수</div>
+        <div class="s-num score-color">${score}</div>
+      </div>
+      <div class="stat-box">
+        <div class="s-label">✅ 성공</div>
+        <div class="s-num hit-color">${hitCount}개</div>
+      </div>
+      <div class="stat-box">
+        <div class="s-label">❌ 놓침</div>
+        <div class="s-num miss-color">${missedTotal}개</div>
+      </div>
+    </div>
+
+    <div class="missed-section">
+      <div class="missed-title">
+        📚 놓친 코드 복습
+        ${missedList.length > 0
+          ? `<span class="missed-count-badge">${missedList.length}종류</span>`
+          : ''}
+      </div>
+      ${missedHTML}
+    </div>
+
+    <button id="retryBtn">🔄 다시 하기</button>
+  `;
+  document.getElementById('retryBtn').addEventListener('click', () => location.reload());
+}
+</script>
+</body>
+</html>
